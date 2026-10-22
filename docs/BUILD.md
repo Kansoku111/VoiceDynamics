@@ -23,3 +23,7 @@ Windows 11 / Visual Studio 2022（MSVC、静的CRT）/ Windows SDK 10.0.26100 / 
 ## 注意
 - Pythonの標準出力は `PYTHONIOENCODING=utf-8` で実行する。
 - ソース変更後は `build.ps1` を全部通してから `install.ps1 -Replace`。
+
+## 公開（GitHub）
+- 公開先：https://github.com/Kansoku111/VoiceDynamics （MIT、Public）。
+- ソースの原本はこのプロジェクト。`.\tools\make_oss.ps1 -Zip` で `配布用\VoiceDynamics-oss`（公開リポジトリの作業ツリー。`.git`以外を作り直す）とリリース用ZIP（`work\release\`）を再生成し、そこでコミット・push、`gh release create` する。コミットの作者は `Kansoku111 <302713191+Kansoku111@users.noreply.github.com>`（個人のメールを出さない）。
