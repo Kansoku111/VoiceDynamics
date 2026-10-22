@@ -70,7 +70,7 @@ const wchar_t* label(uint32_t id) {
     case vd::Ceiling: return L"上限（True Peak）";
     case vd::LimiterRelease: return L"リリース";
     case vd::Target: return L"目標";
-    case vd::GainOffset: return L"補正 微調整";
+    case vd::GainOffset: return L"補正";
     case vd::GrLimit: return L"削減の警告";
     default: return L"";
     }
@@ -98,9 +98,9 @@ const wchar_t* help(uint32_t id) {
     case vd::Ceiling: return L"出力のTrue Peakの上限です。書き出しがこの値を超えないようにします。";
     case vd::LimiterRelease: return L"リミッターが戻る速さです。深く効いているときは自動で長くなります。";
     case vd::Target: return L"全体の平均ラウドネス（LUFS）の目標です。配信の基準に合わせます。";
-    case vd::GainOffset: return L"学習で決まった補正ゲインに足す微調整です。学習し直す必要はありません（リミッターに当たる場合は予測とずれます）。";
+    case vd::GainOffset: return L"コンプ後の補正ゲインです。自動がオンのときは学習で決まった値になり、手では動かせません（二重にかからないように）。";
     case vd::GrLimit: return L"リミッターがこれ以上深く効いたら、画面で警告します。";
-    case vd::AutoOn: return L"オン：学習で決まった補正ゲインを使います。オフ：補正ゲインは微調整の値だけです。";
+    case vd::AutoOn: return L"オン：補正は学習で決まった値です（ノブは自動で動きます）。オフ：補正のノブで手で決めます。";
     case vd::Bypass: return L"処理を通さず、原音を同じ遅延で出します。";
     case vd::LearnAutoStop: return L"オン：DAWの再生を止めたときに学習を終えます。";
     default: return L"";
@@ -171,6 +171,12 @@ class Editor final : public CPluginView, public IPlugViewContentScaleSupport {
 
     int px(int x) const { return int(std::lround(x * scale_)); }
     double value(uint32_t id) const { return controller_->getParamNormalized(id); }
+    bool autoGain() const { return value(vd::AutoOn) >= .5; }
+    // What a control shows: with automatic gain on, the 補正 knob shows the learned gain (0 dB before learning) and cannot be moved.
+    double shown(uint32_t id) const {
+        if (id != vd::GainOffset || !autoGain()) return value(id);
+        return vd::norm(id, haveMeter_ && meter_[vd::MRecValid] > .5 ? std::clamp(meter_[vd::MRecGain], vd::specs[id].lo, vd::specs[id].hi) : 0.);
+    }
     bool live() const { return meterTime_ && GetTickCount64() - meterTime_ < 600; }
     int learnState() const { return haveMeter_ ? int(meter_[vd::MLearnState]) : int(vd::Learner::Idle); }
     bool learning() const { return learnState() == vd::Learner::Armed || learnState() == vd::Learner::Capturing; }
@@ -207,6 +213,11 @@ class Editor final : public CPluginView, public IPlugViewContentScaleSupport {
     }
     void commit(uint32_t id) {
         if (closing_ || refreshing_ || !dirty_[id]) return;
+        if (id == vd::GainOffset && autoGain()) {
+            dirty_[id] = false;
+            refresh(true);
+            return;
+        }
         dirty_[id] = false;
         wchar_t s[64]{};
         GetWindowTextW(edits_[id], s, 64);
@@ -465,7 +476,7 @@ class Editor final : public CPluginView, public IPlugViewContentScaleSupport {
         }
         for (uint32_t id = 0; id < vd::ParamCount; ++id) {
             if (sliders_[id] && gesture_ != int(id)) {
-                const int pos = int(std::lround(value(id) * 10000));
+                const int pos = int(std::lround(shown(id) * 10000));
                 if (SendMessageW(sliders_[id], TBM_GETPOS, 0, 0) != pos) {
                     SendMessageW(sliders_[id], TBM_SETPOS, TRUE, pos);
                     InvalidateRect(sliders_[id], nullptr, FALSE);
@@ -473,9 +484,18 @@ class Editor final : public CPluginView, public IPlugViewContentScaleSupport {
             }
             if (edits_[id] && (force || !(GetFocus() == edits_[id] && dirty_[id]))) {
                 wchar_t s[40];
-                format(id, value(id), s, 40);
+                if (id == vd::GainOffset && autoGain() && haveMeter_ && meter_[vd::MRecValid] > .5) std::swprintf(s, 40, L"%+.1f", meter_[vd::MRecGain]);
+                else format(id, shown(id), s, 40);
                 text(edits_[id], s);
                 dirty_[id] = false;
+            }
+        }
+        if (sliders_[vd::GainOffset]) {
+            const bool manual = !autoGain();
+            if (IsWindowEnabled(sliders_[vd::GainOffset]) != BOOL(manual)) {
+                EnableWindow(sliders_[vd::GainOffset], manual);
+                SendMessageW(edits_[vd::GainOffset], EM_SETREADONLY, !manual, 0);
+                InvalidateRect(sliders_[vd::GainOffset], nullptr, FALSE);
             }
         }
         // Buttons repaint only when what they show changes.
@@ -615,11 +635,11 @@ class Editor final : public CPluginView, public IPlugViewContentScaleSupport {
             g.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
             // A 270 degree knob: minimum at the lower left, maximum at the lower right (GDI+ angles run clockwise from 3 o'clock).
             const float cx = r.right / 2.f, cy = r.bottom / 2.f + scale_, radius = 19 * scale_;
-            const float v = float(value(id));
-            const bool bipolar = id == vd::GainOffset;
+            const float v = float(shown(id));
+            const bool bipolar = id == vd::GainOffset, locked = !IsWindowEnabled(h);
             const float start = 135, at = start + 270 * v, from = bipolar ? 270.f : start;
             const Gdiplus::RectF arc(cx - radius, cy - radius, 2 * radius, 2 * radius);
-            Gdiplus::Pen track(color(NightGrid), 3 * scale_), lit(color(Accent), 3 * scale_);
+            Gdiplus::Pen track(color(NightGrid), 3 * scale_), lit(color(locked ? Muted : Accent), 3 * scale_);
             g.DrawArc(&track, arc, start, 270);
             if (std::abs(at - from) > .2f) g.DrawArc(&lit, arc, std::min(from, at), std::abs(at - from));
             const float face = radius - 5 * scale_;
@@ -726,11 +746,9 @@ class Editor final : public CPluginView, public IPlugViewContentScaleSupport {
         drawText(dc, v.title, 732, 64, 160, 22, v.c == Muted ? NightMuted : v.c, sectionFont_, DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
         wchar_t s[120];
         if (valid) {
-            const double total = meter_[vd::MRecGain] + vd::plain(vd::GainOffset, value(vd::GainOffset));
             std::swprintf(s, 120, L"%+.1f dB", meter_[vd::MRecGain]);
             drawText(dc, s, 562, 84, 150, 44, Accent, bigFont_);
-            std::swprintf(s, 120, L"微調整込み %+.1f dB", total);
-            drawText(dc, s, 562, 130, 150, 18, NightMuted, smallFont_);
+            drawText(dc, autoGain() ? L"コンプの補正に入っています" : L"自動はオフ（使っていません）", 562, 130, 160, 18, NightMuted, smallFont_);
             const double target = vd::plain(vd::Target, value(vd::Target));
             std::swprintf(s, 120, L"学習した音  %.1f LUFS", meter_[vd::MRecPre]);
             drawText(dc, s, 718, 90, 180, 18, Ink, smallFont_);
@@ -874,10 +892,9 @@ class Editor final : public CPluginView, public IPlugViewContentScaleSupport {
             sectionMeter(dc, g, 2, 248, -6, 6, 0, haveMeter_ ? meter_[vd::MLevelerDb] : 0, Accent, L"補正");
             sectionMeter(dc, g, 2, LimiterTop + 30, -12, 0, 0, haveMeter_ ? meter_[vd::MLimiterDb] : 0, LimitColor, L"削減");
             wchar_t s[120];
-            if (haveMeter_ && meter_[vd::MRecValid] > .5 && value(vd::AutoOn) >= .5)
-                std::swprintf(s, 120, L"補正の合計 %+.1f dB（自動 %+.1f）", zero(meter_[vd::MRecGain] + vd::plain(vd::GainOffset, value(vd::GainOffset))), meter_[vd::MRecGain]);
-            else if (value(vd::AutoOn) >= .5) std::swprintf(s, 120, L"学習するまで補正は微調整の値だけです");
-            else std::swprintf(s, 120, L"補正は微調整の値だけです（自動はオフ）");
+            if (haveMeter_ && meter_[vd::MRecValid] > .5 && autoGain()) std::swprintf(s, 120, L"補正は自動 %+.1f dB（学習の値）", zero(meter_[vd::MRecGain]));
+            else if (autoGain()) std::swprintf(s, 120, L"学習するまで補正は 0 dB です");
+            else std::swprintf(s, 120, L"補正は手で決めた値です（自動はオフ）");
             drawText(dc, s, Left(1), 592, 260, 18, Muted, smallFont_);
             for (const auto& p : Sliders) cellLabel(dc, p.id, p.x, p.y);
             paintMeters(dc, g);

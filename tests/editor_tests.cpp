@@ -188,6 +188,19 @@ void editorTests(IPluginFactory* factory, const std::filesystem::path& pictures)
         check(!IsWindowEnabled(GetDlgItem(window, ClearButton)) || true, "clear button exists");
         if (round == 0) {
             if (!pictures.empty()) capture(window, pictures / "editor-idle.png");
+            // Automatic gain on (default): the 補正 knob is locked so a manual value cannot add on top of the learned gain.
+            {
+                const double before = a.ctrl->getParamNormalized(vd::GainOffset);
+                HWND edit = GetDlgItem(window, EditBase + int(vd::GainOffset));
+                check(!IsWindowEnabled(GetDlgItem(window, SliderBase + int(vd::GainOffset))) && (GetWindowLongW(edit, GWL_STYLE) & ES_READONLY), "automatic on: the 補正 knob and its field are locked");
+                SetWindowTextW(edit, L"6");
+                SendMessageW(window, WM_COMMAND, MAKEWPARAM(EditBase + int(vd::GainOffset), EN_KILLFOCUS), reinterpret_cast<LPARAM>(edit));
+                tick();
+                check(a.ctrl->getParamNormalized(vd::GainOffset) == before, "automatic on: typing into 補正 changes nothing");
+                a.parameter(vd::AutoOn, 0);
+                tick();
+                check(IsWindowEnabled(GetDlgItem(window, SliderBase + int(vd::GainOffset))) && !(GetWindowLongW(edit, GWL_STYLE) & ES_READONLY), "automatic off: the 補正 knob is manual");
+            }
             // Every numeric control reaches the controller and the processor.
             for (uint32_t id = 0; id < vd::ParamCount; ++id) {
                 HWND edit = GetDlgItem(window, EditBase + int(id));

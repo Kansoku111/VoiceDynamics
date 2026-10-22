@@ -483,7 +483,7 @@ void resultTests(IPluginFactory* factory) {
     check(stale(), "changing the mono counting makes it stale");
     a.plain(vd::MonoMode, 0);
     check(!stale(), "…and fresh again");
-    // the gain in force is automatic + offset, exactly
+    // the gain in force is the automatic gain alone: a manual value must not add on top of it
     a.plain(vd::GainOffset, 0);
     MemoryStream state;
     a.saveState(state);
@@ -496,7 +496,12 @@ void resultTests(IPluginFactory* factory) {
     y.plain(vd::GainOffset, r.gain);
     y.start();
     const auto ox = play<double>(x, in, p), oy = play<double>(y, in, p);
-    check(std::abs(r.gain) <= 12 && maxDifference(ox, oy) < 1e-9, "auto gain + offset: the learned gain equals the same value typed in as the fine offset");
+    check(std::abs(r.gain) <= 12 && maxDifference(ox, oy) < 1e-9, "the learned gain equals the same value typed in as the manual gain with automatic off");
+    Instance v(factory);
+    v.loadState(state);
+    v.plain(vd::GainOffset, 6);
+    v.start();
+    check(maxDifference(ox, play<double>(v, in, p)) == 0, "automatic on: the manual 補正 does not add on top of the learned gain");
     // auto off: the learned gain is ignored
     Instance z(factory), w(factory);
     z.loadState(state);
@@ -504,7 +509,7 @@ void resultTests(IPluginFactory* factory) {
     z.start();
     w.start();
     check(maxDifference(play<double>(z, in, p), play<double>(w, in, p)) == 0, "補正ゲイン（自動）off ignores the learned gain");
-    std::cout << "PASS result: staleness follows exactly the settings that change the analysis; gain in force = automatic + fine offset; automatic off ignores it\n";
+    std::cout << "PASS result: staleness follows exactly the settings that change the analysis; gain in force = the automatic gain alone (manual ignored); automatic off ignores the learned gain\n";
 }
 
 // A new target (or limiter setting) after learning is solved again over the kept recording, without playing again.
@@ -788,6 +793,7 @@ void effectTests(IPluginFactory* factory) {
     // `hot` first adds +12 dB so that the limiter has something to do.
     auto renderWith = [&](int id, double normalized, bool hot) {
         Instance a(factory);
+        a.plain(vd::AutoOn, 0);  // the manual gain only acts with automatic gain off
         if (hot) a.plain(vd::GainOffset, 12);
         if (id >= 0) a.parameter(uint32_t(id), normalized);
         a.start();
@@ -819,6 +825,7 @@ void hostRelationTests(IPluginFactory* factory) {
     {
         Instance a(factory), b(factory), c(factory);
         b.plain(vd::CompThreshold, -40);
+        b.plain(vd::AutoOn, 0);
         b.plain(vd::GainOffset, 6);
         a.start();
         b.start();
@@ -858,6 +865,7 @@ void hostRelationTests(IPluginFactory* factory) {
     }
     {  // meter frames and the plug-in's own output loudness agree with an independent measurement
         Instance a(factory);
+        a.plain(vd::AutoOn, 0);
         a.plain(vd::GainOffset, 5);
         a.start();
         vd::MeterFrame f{};

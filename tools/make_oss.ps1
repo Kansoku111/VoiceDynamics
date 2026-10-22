@@ -19,7 +19,7 @@ foreach ($item in 'setup.ps1','build.ps1','install.ps1','crosscheck.py','vd_tool
 foreach ($item in 'BUILD.md','DECISIONS.md','USER-TEST.md') {
     Copy-Item -LiteralPath (Join-Path $docs $item) -Destination (Join-Path $Out 'docs')
 }
-Copy-Item -LiteralPath (Join-Path $docs 'evidence\0.2.0\editor-done-100.png') -Destination (Join-Path $Out 'docs\screenshot.png')
+Copy-Item -LiteralPath (Join-Path $docs 'evidence\0.2.3\editor-done-100.png') -Destination (Join-Path $Out 'docs\screenshot.png')
 if ($Zip) {
     $version=(Select-String -LiteralPath (Join-Path $project 'src\version.h') -Pattern 'VD_VERSION "([^"]+)"').Matches[0].Groups[1].Value
     $stage=Join-Path $project "work\release\VoiceDynamics-$version-win64"

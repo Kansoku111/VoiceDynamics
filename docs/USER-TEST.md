@@ -1,4 +1,4 @@
-# VoiceDynamics 0.2.2 実機確認チェックリスト（Studio One 6 / REAPER）
+# VoiceDynamics 0.2.3 実機確認チェックリスト（Studio One 6 / REAPER）
 
 導入先：`C:\Program Files\Common Files\VST3\VoiceDynamics.vst3`（メーカー名は「Kansoku111」）。
 開発側は自動試験・validator・pluginvalまで確認済みで、**以下はまだ誰も確認していません**。結果（○×とメモ）を返してください。

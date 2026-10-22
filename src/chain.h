@@ -20,7 +20,7 @@ class Chain {
 public:
     void prepare(double fs, int channels);
     void reset(bool primeGain = true) noexcept;
-    // totalGainDb = automatic gain (when enabled) + fine offset; passed in by the caller.
+    // totalGainDb = the automatic gain when enabled, otherwise the manual gain; passed in by the caller.
     void set(const Settings& s, double autoGainDb) noexcept;
     int latency() const noexcept { return pre_.latency() + limiter_.latency(); }
     int channels() const noexcept { return channels_; }
@@ -42,5 +42,6 @@ private:
 };
 
 // Total correction gain of a settings/auto-gain pair (shared by the plug-in and the analysis).
-inline double totalGainDb(const Settings& s, double autoGainDb) noexcept { return (s.autoOn ? autoGainDb : 0.0) + s.offsetDb; }
+// Automatic on: the learned gain alone (the manual value would push the output past the target). Off: the manual value.
+inline double totalGainDb(const Settings& s, double autoGainDb) noexcept { return s.autoOn ? autoGainDb : s.offsetDb; }
 }  // namespace vd
